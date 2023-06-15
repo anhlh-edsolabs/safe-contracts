@@ -1,9 +1,10 @@
 import { getCompatFallbackHandler } from "./../utils/setup";
 import { calculateSafeMessageHash, signHash, buildContractSignature } from "./../../src/utils/execution";
 import { expect } from "chai";
-import { deployments, waffle } from "hardhat";
+import hre, { deployments, waffle } from "hardhat";
 import "@nomiclabs/hardhat-ethers";
 import { AddressZero } from "@ethersproject/constants";
+import { parseEther } from "@ethersproject/units";
 import crypto from "crypto";
 import { getSafeTemplate, getSafeWithOwners } from "../utils/setup";
 import {
@@ -21,7 +22,7 @@ import {
 import { chainId } from "../utils/encoding";
 
 describe("Safe", async () => {
-    const [user1, user2, user3, user4, user5] = waffle.provider.getWallets();
+    const [user1, user2, user3, user4, user5, user6, user7] = waffle.provider.getWallets();
 
     const setupTests = deployments.createFixture(async ({ deployments }) => {
         await deployments.fixture();
@@ -71,7 +72,7 @@ describe("Safe", async () => {
             const { safe } = await setupTests();
             const tx = buildSafeTransaction({ to: safe.address, nonce: await safe.nonce() });
             const txHash = calculateSafeTransactionHash(safe, tx, await chainId());
-            const signerSafe = safe.connect(user2);
+            const signerSafe = safe.connect(user6);
             await expect(signerSafe.approveHash(txHash)).to.be.revertedWith("GS030");
         });
 
@@ -98,7 +99,7 @@ describe("Safe", async () => {
             );
         });
 
-        it("should fail if sigantures data is not present", async () => {
+        it("should fail if signatures data is not present", async () => {
             const { safe } = await setupTests();
 
             const signatures =
@@ -113,7 +114,7 @@ describe("Safe", async () => {
             );
         });
 
-        it("should fail if sigantures data is too short", async () => {
+        it("should fail if signatures data is too short", async () => {
             const { safe } = await setupTests();
 
             const signatures =
@@ -245,6 +246,88 @@ describe("Safe", async () => {
                 ),
             ).to.emit(safe, "ExecutionSuccess");
         });
+
+        it("should be able to send erc20 token when signature threshold is reached", async () => {
+            const mockErc20 = async () => {
+                const Erc20 = await hre.ethers.getContractFactory("ERC20Token");
+                return await Erc20.deploy();
+            };
+
+            await setupTests();
+
+            const threshold = 3;
+            const safe = await getSafeWithOwners([
+                user1.address,
+                user2.address,
+                user3.address,
+                user4.address,
+                user5.address
+            ], threshold);
+            const token = await mockErc20();
+
+            await token.transfer(safe.address, hre.ethers.utils.parseEther("100"));
+            expect(await token.balanceOf(safe.address)).to.be.deep.eq(hre.ethers.utils.parseEther("100"));
+
+            let data = token.interface.encodeFunctionData("transfer", [user7.address, hre.ethers.utils.parseEther("1.0")]);
+            const tx = buildSafeTransaction({ to: token.address, value: 0, data: data, nonce: await safe.nonce() });
+
+            await expect(
+                logGas(
+                    "Execute erc20 transfer transaction with approval from 3 out of 5 owners",
+                    executeTx(safe, tx, [
+                        await safeApproveHash(user1, safe, tx, true),
+                        await safeApproveHash(user4, safe, tx),
+                        await safeSignTypedData(user2, safe, tx),
+                    ]),
+                ),
+            ).to.emit(safe, "ExecutionSuccess");
+
+            expect(await token.balanceOf(user7.address)).to.be.deep.eq(hre.ethers.utils.parseEther("1.0"));
+        });
+
+        it("should be able to send ETH when signature threshold is reached", async () => {
+            await setupTests();
+            const handler = await getCompatFallbackHandler();
+
+            const threshold = 3;
+            const safe = await getSafeWithOwners([
+                user1.address,
+                user2.address,
+                user3.address,
+                user4.address,
+                user5.address
+            ], threshold);
+            const messageHandler = handler.attach(safe.address);
+
+            await user1.sendTransaction({ to: safe.address, value: parseEther("1") });
+            expect(await hre.ethers.provider.getBalance(safe.address)).to.be.deep.eq(parseEther("1"));
+            const operation = 0;
+            const to = user7.address;
+            const value = parseEther("1");
+            const data = "0x";
+            const nonce = await safe.nonce();
+
+            const userCurrentBalance = await hre.ethers.provider.getBalance(user7.address);
+
+            // Use off-chain Safe signature
+            // const messageData = await safe.encodeTransactionData(to, value, data, operation, 0, 0, 0, AddressZero, AddressZero, nonce);
+            // const messageHash = await messageHandler.getMessageHash(messageData);
+            const tx = buildSafeTransaction({ to: to, value: value, data: data, operation: operation, nonce: nonce });
+            // const ownerSigs = await buildSignatureBytes([await signHash(user1, messageHash), await signHash(user2, messageHash)]);
+
+            await expect(
+                logGas(
+                    "Transfer 1 ETH to user account with approval from 3 out of 5 owners",
+                    executeTx(safe, tx, [
+                        await safeApproveHash(user1, safe, tx, true),
+                        await safeApproveHash(user4, safe, tx),
+                        await safeSignTypedData(user2, safe, tx),
+                    ]),
+                ),
+            ).to.emit(safe, "ExecutionSuccess");
+
+            expect(await hre.ethers.provider.getBalance(user7.address)).to.be.deep.eq(userCurrentBalance.add(parseEther("1")));
+        })
     });
 
     describe("checkSignatures", async () => {

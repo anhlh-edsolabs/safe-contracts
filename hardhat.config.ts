@@ -7,6 +7,7 @@ import "hardhat-deploy";
 import dotenv from "dotenv";
 import yargs from "yargs";
 import { getSingletonFactoryInfo } from "@gnosis.pm/safe-singleton-factory";
+import "hardhat-gas-reporter";
 
 const argv = yargs
     .option("network", {
@@ -130,6 +131,14 @@ const userConfig: HardhatUserConfig = {
     },
     etherscan: {
         apiKey: ETHERSCAN_API_KEY,
+    },
+    gasReporter: {
+        enabled: true,
+        showMethodSig: true,
+        currency: 'USD',
+        gasPrice: 17,
+        token: 'ETH',
+        coinmarketcap: process.env.COINMARKETCAP_API_KEY
     },
 };
 if (NODE_URL) {

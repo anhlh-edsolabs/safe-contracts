@@ -10,7 +10,8 @@ import { AddressOne } from "../../src/utils/constants";
 import { chainId, encodeTransfer } from "../utils/encoding";
 
 describe("Safe", async () => {
-    const [user1, user2, user3] = waffle.provider.getWallets();
+    const [user1, user2, user3, user4, user5] = waffle.provider.getWallets();
+    const threshold = 3;
 
     const setupTests = deployments.createFixture(async ({ deployments }) => {
         await deployments.fixture();
@@ -37,8 +38,8 @@ describe("Safe", async () => {
 
             await expect(
                 singleton.setup(
-                    [user1.address, user2.address, user3.address],
-                    2,
+                    [user1.address, user2.address, user3.address, user4.address, user5.address],
+                    threshold,
                     AddressZero,
                     "0x",
                     AddressZero,
@@ -53,8 +54,8 @@ describe("Safe", async () => {
             const { template } = await setupTests();
             await expect(
                 template.setup(
-                    [user1.address, user2.address, user3.address],
-                    2,
+                    [user1.address, user2.address, user3.address, user4.address, user5.address],
+                    threshold,
                     AddressZero,
                     "0x",
                     AddressZero,
@@ -64,10 +65,10 @@ describe("Safe", async () => {
                 ),
             )
                 .to.emit(template, "SafeSetup")
-                .withArgs(user1.address, [user1.address, user2.address, user3.address], 2, AddressZero, AddressZero);
+                .withArgs(user1.address, [user1.address, user2.address, user3.address, user4.address, user5.address], threshold, AddressZero, AddressZero);
             await expect(await template.domainSeparator()).to.be.eq(calculateSafeDomainSeparator(template, await chainId()));
-            await expect(await template.getOwners()).to.be.deep.eq([user1.address, user2.address, user3.address]);
-            await expect(await template.getThreshold()).to.be.deep.eq(BigNumber.from(2));
+            await expect(await template.getOwners()).to.be.deep.eq([user1.address, user2.address, user3.address, user4.address, user5.address]);
+            await expect(await template.getThreshold()).to.be.deep.eq(BigNumber.from(threshold));
         });
 
         it("should revert if called twice", async () => {
@@ -193,8 +194,8 @@ describe("Safe", async () => {
             const initData = testIntializer.interface.encodeFunctionData("init", ["0x42baddad"]);
             await expect(
                 template.setup(
-                    [user1.address, user2.address, user3.address],
-                    2,
+                    [user1.address, user2.address, user3.address, user4.address, user5.address],
+                    threshold,
                     testIntializer.address,
                     initData,
                     AddressOne,
@@ -204,10 +205,10 @@ describe("Safe", async () => {
                 ),
             )
                 .to.emit(template, "SafeSetup")
-                .withArgs(user1.address, [user1.address, user2.address, user3.address], 2, testIntializer.address, AddressOne);
+                .withArgs(user1.address, [user1.address, user2.address, user3.address, user4.address, user5.address], threshold, testIntializer.address, AddressOne);
             await expect(await template.domainSeparator()).to.be.eq(calculateSafeDomainSeparator(template, await chainId()));
-            await expect(await template.getOwners()).to.be.deep.eq([user1.address, user2.address, user3.address]);
-            await expect(await template.getThreshold()).to.be.deep.eq(BigNumber.from(2));
+            await expect(await template.getOwners()).to.be.deep.eq([user1.address, user2.address, user3.address, user4.address, user5.address]);
+            await expect(await template.getThreshold()).to.be.deep.eq(BigNumber.from(threshold));
 
             await expect(
                 await hre.ethers.provider.getStorageAt(
